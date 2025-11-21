@@ -4,23 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
-
 import React, { useState, useRef, useEffect } from 'react';
-import * as THREE from 'three'; // Import THREE for the background
+import * as THREE from 'three';
 import { generateImage, generateVoxelScene } from './services/gemini';
 import { extractHtmlFromText, hideBodyText, zoomCamera } from './utils/html';
 
-type AppStatus = 'idle' | 'generating_image' | 'generating_voxels' | 'error';
-
-const ASPECT_RATIOS = ["1:1", "3:4", "4:3", "16:9", "9:16"];
-
-const ALLOWED_MIME_TYPES = [
-  'image/png',
-  'image/jpeg',
-  'image/webp',
-  'image/heic',
-  'image/heif'
-];
+// --- Constants & Types ---
 
 const SAMPLE_PROMPTS = [
     "A modern house with a pool",
@@ -32,6 +21,7 @@ const SAMPLE_PROMPTS = [
 ];
 
 const SPLASH_PHRASES = [
+    "Follow the train, CJ!",
     "Creeper? Aww man!",
     "Also try Terraria!",
     "100% pure voxels!",
@@ -42,7 +32,6 @@ const SPLASH_PHRASES = [
     "Pixels galore!",
     "Don't dig straight down!",
     "Herobrine removed!",
-    "Follow the train, CJ!",
     "Uses Google Gemini!",
     "Infinite possibilities!",
     "Diamonds inside!",
@@ -62,7 +51,7 @@ const EXAMPLES: Example[] = [
   { img: 'https://www.gstatic.com/aistudio/starter-apps/image_to_voxel/example3.png', html: '/examples/example3.html' },
 ];
 
-// --- Minecraft UI Components ---
+// --- Helper Components ---
 
 const McButton: React.FC<{
     onClick: () => void;
@@ -71,7 +60,6 @@ const McButton: React.FC<{
     variant?: 'stone' | 'wood' | 'grass' | 'sand';
     children: React.ReactNode;
 }> = ({ onClick, disabled, className = '', variant = 'stone', children }) => {
-    
     let bgClass = "bg-[#7d7d7d] text-[#ddd]";
     let borderLight = "border-[#a8a8a8]";
     let borderDark = "border-[#555555]";
@@ -106,7 +94,7 @@ const McButton: React.FC<{
             onClick={onClick} 
             disabled={disabled} 
             className={`
-                relative font-minecraft text-xl uppercase px-6 py-3 
+                relative font-minecraft text-base uppercase px-4 py-2 
                 border-4 ${borderDark} border-t-${borderLight} border-l-${borderLight}
                 active:border-t-[#222] active:border-l-[#222] active:border-b-[#aaa] active:border-r-[#aaa]
                 ${bgClass} ${hoverClass} transition-none
@@ -124,22 +112,21 @@ const McButton: React.FC<{
 };
 
 const McCard: React.FC<{ children: React.ReactNode; className?: string; title?: string }> = ({ children, className = '', title }) => (
-    <div className={`relative bg-[#333333] border-4 border-[#1a1a1a] p-1 shadow-[4px_4px_0_0_rgba(0,0,0,0.5)] ${className}`}>
-        {/* Inner Bevel */}
-        <div className="border-2 border-[#4d4d4d] border-b-[#222] border-r-[#222] p-4 bg-[#333333] h-full text-[#e0e0e0]">
+    <div className="relative bg-[#333333] border-4 border-[#1a1a1a] p-0.5 shadow-[4px_4px_0_0_rgba(0,0,0,0.5)] mt-3">
+        <div className={`border-2 border-[#4d4d4d] border-b-[#222] border-r-[#222] p-2 bg-[#333333] h-full text-[#e0e0e0]`}>
              {title && (
-                 <div className="absolute -top-5 left-4 bg-[#1a1a1a] border-2 border-[#333] border-b-[#000] border-r-[#000] px-4 py-1">
-                     <span className="font-minecraft text-xl text-[#eee] uppercase tracking-widest drop-shadow-md">{title}</span>
+                 <div className="absolute -top-3 left-2 bg-[#1a1a1a] border-2 border-[#333] border-b-[#000] border-r-[#000] px-2 py-0 z-10">
+                     <span className="font-minecraft text-sm text-[#eee] uppercase tracking-widest drop-shadow-md">{title}</span>
                  </div>
              )}
-             {children}
+             <div className={className}>{children}</div>
         </div>
     </div>
 );
 
 const McSlider: React.FC<{ label: string; value: number; min: number; max: number; step: number; onChange: (val: number) => void }> = ({ label, value, min, max, step, onChange }) => (
-    <div className="space-y-1">
-        <div className="flex justify-between text-[#aaa] font-minecraft text-lg uppercase font-bold">
+    <div className="space-y-0">
+        <div className="flex justify-between text-[#aaa] font-minecraft text-base uppercase font-bold">
             <span>{label}</span>
             <span>{Math.round(value * 100)}%</span>
         </div>
@@ -148,1070 +135,615 @@ const McSlider: React.FC<{ label: string; value: number; min: number; max: numbe
             min={min} max={max} step={step} 
             value={value} 
             onChange={(e) => onChange(parseFloat(e.target.value))}
-            className="w-full appearance-none h-4 bg-[#1a1a1a] border-2 border-b-[#555] border-r-[#555] border-t-[#000] border-l-[#000] outline-none"
+            className="w-full h-4 bg-[#1a1a1a] border-2 border-[#555] appearance-none outline-none cursor-pointer"
             style={{
-                imageRendering: 'pixelated'
+                accentColor: '#5b8a3c'
             }}
         />
-        <style>{`
-            input[type=range]::-webkit-slider-thumb {
-                -webkit-appearance: none;
-                appearance: none;
-                width: 16px;
-                height: 24px;
-                background: #7d7d7d;
-                border: 2px solid #fff;
-                border-right: 2px solid #555;
-                border-bottom: 2px solid #555;
-                cursor: pointer;
-            }
-            input[type=range]::-webkit-slider-thumb:hover {
-                background: #a0a0a0;
-            }
-        `}</style>
     </div>
 );
 
-const McCraftingLoader: React.FC = () => (
-    <div className="flex justify-center items-center gap-6 mb-8 h-24">
-        <style>{`
-            @keyframes tumble-fall {
-                0% { transform: translateY(-20px) rotateX(0deg) rotateZ(0deg); }
-                25% { transform: translateY(0px) rotateX(90deg) rotateZ(45deg); }
-                50% { transform: translateY(-10px) rotateX(180deg) rotateZ(90deg); }
-                75% { transform: translateY(0px) rotateX(270deg) rotateZ(135deg); }
-                100% { transform: translateY(-20px) rotateX(360deg) rotateZ(180deg); }
-            }
-            .cube-wrapper {
-                width: 48px; height: 48px;
-                perspective: 400px;
-            }
-            .cube {
-                width: 100%; height: 100%;
-                position: relative;
-                transform-style: preserve-3d;
-                animation: tumble-fall 1.5s infinite ease-in-out;
-            }
-            .face {
-                position: absolute; width: 48px; height: 48px;
-                border: 2px solid rgba(0,0,0,0.5);
-                image-rendering: pixelated;
-            }
-            .face.front { transform: translateZ(24px); }
-            .face.back { transform: rotateY(180deg) translateZ(24px); }
-            .face.right { transform: rotateY(90deg) translateZ(24px); }
-            .face.left { transform: rotateY(-90deg) translateZ(24px); }
-            .face.top { transform: rotateX(90deg) translateZ(24px); }
-            .face.bottom { transform: rotateX(-90deg) translateZ(24px); }
+// --- End Portal Background ---
+
+const EndPortalBackground = () => {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const scene = new THREE.Scene();
+    const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    const renderer = new THREE.WebGLRenderer({ alpha: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    containerRef.current.appendChild(renderer.domElement);
+
+    const uniforms = {
+      uTime: { value: 0 },
+      uScroll: { value: 0 },
+      uResolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) }
+    };
+
+    // End Portal Shader
+    const material = new THREE.ShaderMaterial({
+      uniforms,
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform float uTime;
+        uniform float uScroll;
+        uniform vec2 uResolution;
+        varying vec2 vUv;
+
+        float random (in vec2 st) {
+            return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123);
+        }
+
+        float noise (in vec2 st) {
+            vec2 i = floor(st);
+            vec2 f = fract(st);
+            float a = random(i);
+            float b = random(i + vec2(1.0, 0.0));
+            float c = random(i + vec2(0.0, 1.0));
+            float d = random(i + vec2(1.0, 1.0));
+            vec2 u = f * f * (3.0 - 2.0 * f);
+            return mix(a, b, u.x) + (c - a)* u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+        }
+
+        void main() {
+            vec2 st = gl_FragCoord.xy/uResolution.xy;
+            // SLOWER PARALLAX
+            st.y += uScroll * 0.00005; 
             
-            .c-craft .face { background-color: #5c3c22; } /* Base wood */
-            .c-craft .face.top { background-color: #bcaaa4; }
-            .c-craft .face.front::after { content:''; position:absolute; inset:4px; background:#3e2723; opacity:0.5; }
+            // Slow drift - even slower
+            st.x += uTime * 0.001;
 
-            .c-grass .face { background-color: #5b8a3c; } /* Side grass */
-            .c-grass .face.top { background-color: #75ad4f; }
-            .c-grass .face.bottom { background-color: #5c3c22; }
-
-            .c-stone .face { background-color: #7d7d7d; }
+            // Layers of noise - SIGNIFICANTLY SLOWER TIMINGS
+            float n1 = noise(st * 3.0 + uTime * 0.0005);
+            float n2 = noise(st * 6.0 - uTime * 0.001);
+            float n3 = noise(st * 12.0 + uTime * 0.002);
             
-            /* Simulate rudimentary texture details with CSS gradients/shadows */
-            .c-stone .face {
-                background-image: radial-gradient(circle at 20% 20%, rgba(0,0,0,0.2) 10%, transparent 10%),
-                                  radial-gradient(circle at 80% 80%, rgba(0,0,0,0.2) 10%, transparent 10%);
+            float combined = n1 * 0.5 + n2 * 0.25 + n3 * 0.125;
+            
+            // End Portal Palette
+            vec3 col1 = vec3(0.05, 0.1, 0.1); // Dark Teal
+            vec3 col2 = vec3(0.2, 0.0, 0.3); // Purple
+            vec3 col3 = vec3(0.8, 0.9, 1.0); // White specs
+            
+            vec3 color = mix(col1, col2, combined * 2.0);
+            
+            // Specs / Glitch
+            if (random(st + uTime * 0.0005) > 0.985) {
+                color += col3 * 0.5;
             }
-        `}</style>
-        
-        {/* Cube 1: Crafting Table */}
-        <div className="cube-wrapper">
-            <div className="cube c-craft" style={{ animationDelay: '0s' }}>
-                <div className="face front"></div><div className="face back"></div>
-                <div className="face right"></div><div className="face left"></div>
-                <div className="face top"></div><div className="face bottom"></div>
-            </div>
-        </div>
-         {/* Cube 2: Grass Block */}
-         <div className="cube-wrapper">
-            <div className="cube c-grass" style={{ animationDelay: '0.25s' }}>
-                <div className="face front"></div><div className="face back"></div>
-                <div className="face right"></div><div className="face left"></div>
-                <div className="face top"></div><div className="face bottom"></div>
-            </div>
-        </div>
-         {/* Cube 3: Stone Block */}
-         <div className="cube-wrapper">
-            <div className="cube c-stone" style={{ animationDelay: '0.5s' }}>
-                <div className="face front"></div><div className="face back"></div>
-                <div className="face right"></div><div className="face left"></div>
-                <div className="face top"></div><div className="face bottom"></div>
-            </div>
-        </div>
-    </div>
-);
 
-const BouncingDVDText: React.FC = () => {
-    const containerRef = useRef<HTMLDivElement>(null);
-    const textRef = useRef<HTMLDivElement>(null);
-    
-    // Use refs for mutable state to avoid React render cycle overhead for 60fps animation
-    const state = useRef({
-        x: 50,
-        y: 50,
-        vx: 1.5, // velocity x
-        vy: 1.5, // velocity y
-        width: 0,
-        height: 0,
-        parentWidth: 0,
-        parentHeight: 0
+            gl_FragColor = vec4(color, 1.0);
+        }
+      `
     });
 
-    useEffect(() => {
-        const update = () => {
-            if (!containerRef.current || !textRef.current) return;
-            
-            const s = state.current;
-            
-            // Initialize dimensions if needed
-            if (s.parentWidth === 0) {
-                 s.parentWidth = containerRef.current.clientWidth;
-                 s.parentHeight = containerRef.current.clientHeight;
-                 s.width = textRef.current.offsetWidth;
-                 s.height = textRef.current.offsetHeight;
-                 
-                 // Initialize random position inside bounds if just loaded
-                 if (s.x === 50 && s.y === 50) {
-                     s.x = Math.random() * (s.parentWidth - s.width);
-                     s.y = Math.random() * (s.parentHeight - s.height);
-                 }
-            }
+    const geometry = new THREE.PlaneGeometry(2, 2);
+    const mesh = new THREE.Mesh(geometry, material);
+    scene.add(mesh);
 
-            // Move
-            s.x += s.vx;
-            s.y += s.vy;
-
-            // Bounce X
-            if (s.x <= 0) {
-                s.x = 0;
-                s.vx = Math.abs(s.vx);
-            } else if (s.x + s.width >= s.parentWidth) {
-                s.x = s.parentWidth - s.width;
-                s.vx = -Math.abs(s.vx);
-            }
-
-            // Bounce Y
-            if (s.y <= 0) {
-                s.y = 0;
-                s.vy = Math.abs(s.vy);
-            } else if (s.y + s.height >= s.parentHeight) {
-                s.y = s.parentHeight - s.height;
-                s.vy = -Math.abs(s.vy);
-            }
-
-            textRef.current.style.transform = `translate(${s.x}px, ${s.y}px)`;
-            requestAnimationFrame(update);
-        };
-        
-        const animationId = requestAnimationFrame(update);
-        
-        // Handle resize by resetting dims (next frame will re-measure)
-        const handleResize = () => {
-            if (containerRef.current) {
-                state.current.parentWidth = containerRef.current.clientWidth;
-                state.current.parentHeight = containerRef.current.clientHeight;
-            }
-        };
-        window.addEventListener('resize', handleResize);
-        
-        return () => {
-            cancelAnimationFrame(animationId);
-            window.removeEventListener('resize', handleResize);
-        };
-    }, []);
-
-    return (
-        <div ref={containerRef} className="absolute inset-0 overflow-hidden pointer-events-none z-10">
-            <style>{`
-                @keyframes rgb-cycle {
-                    0% { filter: hue-rotate(0deg); }
-                    100% { filter: hue-rotate(360deg); }
-                }
-            `}</style>
-            <div 
-                ref={textRef} 
-                className="absolute top-0 left-0 flex flex-col items-center justify-center"
-                style={{ willChange: 'transform' }}
-            >
-                <div style={{ animation: 'rgb-cycle 8s linear infinite' }}>
-                    <p className="text-3xl uppercase drop-shadow-md text-[#ff3333] font-bold" style={{ textShadow: '3px 3px 0px #1a1a1a' }}>
-                        Select or Create
-                    </p>
-                    <p className="text-xl opacity-90 text-[#ff3333] mt-1 text-center" style={{ textShadow: '2px 2px 0px #1a1a1a' }}>to begin</p>
-                </div>
-            </div>
-        </div>
-    );
-};
-
-const SplashText: React.FC = () => {
-    const [splash, setSplash] = useState("");
-
-    useEffect(() => {
-        const randomSplash = SPLASH_PHRASES[Math.floor(Math.random() * SPLASH_PHRASES.length)];
-        setSplash(randomSplash);
-    }, []);
-
-    return (
-        // Adjusted position to overlay on the title with a jaunty angle
-        <div className="absolute right-[-120px] top-[-40px] z-50 origin-center pointer-events-none select-none">
-             <style>{`
-                @keyframes splash-pulse {
-                    0% { transform: scale(1) rotate(-20deg); }
-                    50% { transform: scale(1.1) rotate(-20deg); }
-                    100% { transform: scale(1) rotate(-20deg); }
-                }
-                .splash-text-anim {
-                    animation: splash-pulse 0.6s infinite ease-in-out alternate;
-                    font-smooth: never;
-                    -webkit-font-smoothing: none;
-                }
-             `}</style>
-            <span className="splash-text-anim block text-[#FFFF55] text-3xl font-minecraft drop-shadow-[4px_4px_0_rgba(0,0,0,0.75)] whitespace-nowrap" 
-                  style={{ textShadow: '3px 3px 0px #3f3f3f' }}>
-                {splash}
-            </span>
-        </div>
-    );
-};
-
-const EndPortalBackground: React.FC = () => {
-    const containerRef = useRef<HTMLDivElement>(null);
-    const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
-
-    useEffect(() => {
-        if (!containerRef.current) return;
-
-        // 1. Setup Scene
-        const scene = new THREE.Scene();
-        const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-        const renderer = new THREE.WebGLRenderer({ alpha: false, antialias: false });
+    const handleResize = () => {
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Limit for performance
-        containerRef.current.appendChild(renderer.domElement);
-        rendererRef.current = renderer;
-
-        // 2. End Portal Shader Material
-        // Mimics the layered, scrolling parallax of the Minecraft End Portal
-        const uniforms = {
-            uTime: { value: 0 },
-            uScroll: { value: 0 },
-            uResolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) }
-        };
-
-        const vertexShader = `
-            varying vec2 vUv;
-            void main() {
-                vUv = uv;
-                gl_Position = vec4(position, 1.0);
-            }
-        `;
-
-        const fragmentShader = `
-            uniform float uTime;
-            uniform float uScroll;
-            uniform vec2 uResolution;
-            varying vec2 vUv;
-
-            // Simple pseudo-random
-            float random(vec2 st) {
-                return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123);
-            }
-
-            // Value Noise
-            float noise(vec2 st) {
-                vec2 i = floor(st);
-                vec2 f = fract(st);
-                float a = random(i);
-                float b = random(i + vec2(1.0, 0.0));
-                float c = random(i + vec2(0.0, 1.0));
-                float d = random(i + vec2(1.0, 1.0));
-                vec2 u = f * f * (3.0 - 2.0 * f);
-                return mix(a, b, u.x) + (c - a)* u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
-            }
-
-            void main() {
-                // Correct Aspect Ratio
-                vec2 st = gl_FragCoord.xy / uResolution.xy;
-                st.x *= uResolution.x / uResolution.y;
-
-                // Colors (End Portal Palette)
-                vec3 c1 = vec3(0.05, 0.02, 0.10); // Deep void
-                vec3 c2 = vec3(0.12, 0.45, 0.35); // Teal/Greenish
-                vec3 c3 = vec3(0.30, 0.10, 0.40); // Purple
-                vec3 c4 = vec3(0.80, 0.90, 0.70); // White/Green specs
-
-                vec3 color = c1;
-
-                // Simulate Layers
-                // We scroll layers at different speeds/rotations
-                float scroll = uScroll * 0.001;
-                
-                for(float i = 1.0; i <= 4.0; i++) {
-                    float t = uTime * 0.1 + scroll * i; // Movement
-                    
-                    // Rotation logic
-                    float ang = i * 1.0; 
-                    mat2 rot = mat2(cos(ang), -sin(ang), sin(ang), cos(ang));
-                    
-                    vec2 pos = st * (2.0 + i); // Scale based on layer
-                    pos += vec2(t, t * 0.5);   // Drift
-                    pos = rot * pos;           // Rotate
-
-                    float n = noise(pos);
-                    
-                    // Thresholding for "portal" look
-                    float layerIntensity = smoothstep(0.4, 0.8, n);
-                    
-                    // Mix colors based on layer index
-                    vec3 layerColor = mix(c2, c3, fract(i * 0.5));
-                    if (i == 4.0) layerColor = c4; // Top specs
-
-                    color = mix(color, layerColor, layerIntensity * 0.4);
-                }
-                
-                // Vignette
-                float dist = distance(vUv, vec2(0.5));
-                color *= 1.0 - dist * 0.6;
-
-                gl_FragColor = vec4(color, 1.0);
-            }
-        `;
-
-        const geometry = new THREE.PlaneGeometry(2, 2);
-        const material = new THREE.ShaderMaterial({
-            vertexShader,
-            fragmentShader,
-            uniforms
-        });
-
-        const plane = new THREE.Mesh(geometry, material);
-        scene.add(plane);
-
-        // 3. Animation Loop
-        const animate = () => {
-            requestAnimationFrame(animate);
-            uniforms.uTime.value += 0.02;
-            uniforms.uScroll.value = window.scrollY;
-            renderer.render(scene, camera);
-        };
-        animate();
-
-        // 4. Handlers
-        const handleResize = () => {
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            uniforms.uResolution.value.set(window.innerWidth, window.innerHeight);
-        };
-        window.addEventListener('resize', handleResize);
-
-        return () => {
-            window.removeEventListener('resize', handleResize);
-            if(rendererRef.current) {
-                rendererRef.current.dispose();
-                rendererRef.current.domElement.remove();
-            }
-            geometry.dispose();
-            material.dispose();
-        };
-    }, []);
-
-    return (
-        <div 
-            ref={containerRef} 
-            style={{ 
-                position: 'fixed', 
-                top: 0, left: 0, width: '100%', height: '100%', 
-                zIndex: 1, // Middle layer
-                pointerEvents: 'none'
-            }} 
-        />
-    );
-};
-
-// ---------------------------
-
-const App: React.FC = () => {
-  const [prompt, setPrompt] = useState('');
-  const [placeholderIndex, setPlaceholderIndex] = useState(0);
-  
-  const [imageData, setImageData] = useState<string | null>(null);
-  const [voxelCode, setVoxelCode] = useState<string | null>(null);
-  
-  const [userContent, setUserContent] = useState<{
-      image: string;
-      voxel: string | null;
-      prompt: string;
-  } | null>(null);
-
-  const [selectedTile, setSelectedTile] = useState<number | 'user' | null>(null);
-  const [showGenerator, setShowGenerator] = useState(false);
-
-  const [status, setStatus] = useState<AppStatus>('idle');
-  const [errorMsg, setErrorMsg] = useState('');
-  const [useOptimization, setUseOptimization] = useState(true);
-  const [aspectRatio, setAspectRatio] = useState('1:1');
-  const [viewMode, setViewMode] = useState<'image' | 'voxel'>('image');
-  
-  const [thinkingText, setThinkingText] = useState<string | null>(null);
-  const [loadedThumbnails, setLoadedThumbnails] = useState<Record<string, string>>({});
-
-  // Environment Settings
-  const [sunlight, setSunlight] = useState(0.5);
-  const [godRays, setGodRays] = useState(0.5);
-
-  const [isDragging, setIsDragging] = useState(false);
-  const [isViewerVisible, setIsViewerVisible] = useState(true);
-  
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Update Iframe environment when settings change
-  useEffect(() => {
-    if (iframeRef.current && iframeRef.current.contentWindow) {
-        iframeRef.current.contentWindow.postMessage({
-            type: 'environment',
-            sunlight,
-            godrays: godRays
-        }, '*');
-    }
-  }, [sunlight, godRays]);
-
-  // Rotate placeholders
-  useEffect(() => {
-    const interval = setInterval(() => {
-        setPlaceholderIndex((prev) => (prev + 1) % SAMPLE_PROMPTS.length);
-    }, 3000);
-    return () => clearInterval(interval);
-  }, []);
-
-  useEffect(() => {
-    const createdUrls: string[] = [];
-    const loadThumbnails = async () => {
-      const loaded: Record<string, string> = {};
-      await Promise.all(EXAMPLES.map(async (ex) => {
-        try {
-          const response = await fetch(ex.img);
-          if (response.ok) {
-            const blob = await response.blob();
-            const url = URL.createObjectURL(blob);
-            createdUrls.push(url);
-            loaded[ex.img] = url;
-          }
-        } catch (e) {
-          console.error("Failed to load thumbnail:", ex.img, e);
-        }
-      }));
-      setLoadedThumbnails(loaded);
+        uniforms.uResolution.value.set(window.innerWidth, window.innerHeight);
     };
-    loadThumbnails();
+    const handleScroll = () => {
+        uniforms.uScroll.value = window.scrollY;
+    };
+
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('scroll', handleScroll);
+
+    const animate = (time: number) => {
+      uniforms.uTime.value = time * 0.001;
+      renderer.render(scene, camera);
+      requestAnimationFrame(animate);
+    };
+    requestAnimationFrame(animate);
 
     return () => {
-        createdUrls.forEach(url => URL.revokeObjectURL(url));
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('scroll', handleScroll);
+      if (containerRef.current) containerRef.current.innerHTML = '';
     };
   }, []);
 
-  const handleError = (err: any) => {
-    setStatus('error');
-    setErrorMsg(err.message || 'An unexpected error occurred.');
-    console.error(err);
-  };
+  return <div ref={containerRef} className="fixed top-0 left-0 w-full h-full z-1 pointer-events-none" />;
+};
 
-  const handleImageGenerate = async () => {
-    if (!prompt.trim()) return;
-    
-    setStatus('generating_image');
-    setErrorMsg('');
-    setImageData(null);
-    setVoxelCode(null);
-    setThinkingText(null);
-    setViewMode('image');
-    setIsViewerVisible(true);
+// --- Bouncing DVD Text ---
 
-    try {
-      const imageUrl = await generateImage(prompt, aspectRatio, useOptimization);
-      const newUserContent = {
-          image: imageUrl,
-          voxel: null,
-          prompt: prompt
-      };
-      setUserContent(newUserContent);
-      setImageData(imageUrl);
-      setVoxelCode(null);
-      setSelectedTile('user');
-      setStatus('idle');
-      setShowGenerator(false);
-    } catch (err) {
-      handleError(err);
-    }
-  };
+const BouncingDVDText = ({ parentRef }: { parentRef: React.RefObject<HTMLDivElement> }) => {
+  const elementRef = useRef<HTMLDivElement>(null);
+  // Use refs for animation state to avoid re-renders
+  const pos = useRef({ x: 20, y: 20 });
+  const vel = useRef({ x: 2, y: 2 });
+  
+  useEffect(() => {
+    let animationFrameId: number;
 
-  const processFile = (file: File) => {
-    if (!ALLOWED_MIME_TYPES.includes(file.type)) {
-      handleError(new Error("Invalid file type. Please upload PNG, JPEG, WEBP, HEIC, or HEIF."));
-      return;
-    }
+    const animate = () => {
+      if (parentRef.current && elementRef.current) {
+        // Use parent's dimensions
+        const parentWidth = parentRef.current.clientWidth;
+        const parentHeight = parentRef.current.clientHeight;
+        
+        // Use element's own dimensions for collision
+        const elRect = elementRef.current.getBoundingClientRect();
+        const elWidth = elRect.width;
+        const elHeight = elRect.height;
 
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const result = e.target?.result as string;
-      const newUserContent = {
-          image: result,
-          voxel: null,
-          prompt: ''
-      };
-      setUserContent(newUserContent);
-      setImageData(result);
-      setVoxelCode(null);
-      setViewMode('image');
-      setStatus('idle');
-      setErrorMsg('');
-      setSelectedTile('user');
-      setShowGenerator(false);
-      setIsViewerVisible(true);
-    };
-    reader.onerror = () => handleError(new Error("Failed to read file"));
-    reader.readAsDataURL(file);
-  };
+        const maxX = parentWidth - elWidth;
+        const maxY = parentHeight - elHeight;
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) processFile(file);
-  };
+        // Update Position
+        pos.current.x += vel.current.x;
+        pos.current.y += vel.current.y;
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file) {
-        processFile(file);
-    }
-  };
-
-  const handleExampleClick = async (example: Example, index: number) => {
-    if (status !== 'idle' && status !== 'error') return;
-    
-    setSelectedTile(index);
-    setShowGenerator(false);
-    setErrorMsg('');
-    setThinkingText(null);
-    setIsViewerVisible(true);
-    
-    try {
-      const imgResponse = await fetch(example.img);
-      if (!imgResponse.ok) throw new Error(`Failed to load example image: ${imgResponse.statusText}`);
-      const imgBlob = await imgResponse.blob();
-      
-      const base64Img = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = (e) => resolve(e.target?.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(imgBlob);
-      });
-
-      let htmlText = '';
-      try {
-        const htmlResponse = await fetch(example.html);
-        if (htmlResponse.ok) {
-            const rawText = await htmlResponse.text();
-            htmlText = zoomCamera(hideBodyText(extractHtmlFromText(rawText)));
-        } else {
-            htmlText = `<html><body><p>${example.html} not found.</p></body></html>`;
+        // Bounce X
+        if (pos.current.x >= maxX) {
+            pos.current.x = maxX;
+            vel.current.x *= -1;
+        } else if (pos.current.x <= 0) {
+            pos.current.x = 0;
+            vel.current.x *= -1;
         }
-      } catch (e) {
-          htmlText = "<html><body>Error loading example scene.</body></html>";
+
+        // Bounce Y
+        if (pos.current.y >= maxY) {
+            pos.current.y = maxY;
+            vel.current.y *= -1;
+        } else if (pos.current.y <= 0) {
+            pos.current.y = 0;
+            vel.current.y *= -1;
+        }
+
+        // Apply transform
+        elementRef.current.style.transform = `translate(${pos.current.x}px, ${pos.current.y}px)`;
       }
+      animationFrameId = requestAnimationFrame(animate);
+    };
 
-      setImageData(base64Img);
-      setVoxelCode(htmlText);
-      setViewMode('voxel');
-      setStatus('idle');
+    animationFrameId = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(animationFrameId);
+  }, [parentRef]);
 
-    } catch (err) {
-      handleError(err);
+  return (
+    <div 
+      ref={elementRef} 
+      className="absolute top-0 left-0 select-none pointer-events-none font-minecraft text-xl font-bold w-max z-10"
+      style={{ willChange: 'transform' }}
+    >
+      <div className="flex flex-col items-center justify-center p-4 text-center animate-[rgb-cycle_8s_infinite]">
+          <span className="text-3xl drop-shadow-[3px_3px_0_#000]">SELECT OR CREATE</span>
+          <span className="text-sm opacity-80 drop-shadow-[1px_1px_0_#000]">to begin</span>
+      </div>
+    </div>
+  );
+};
+
+
+// --- MAIN APP ---
+
+const App = () => {
+  const [image, setImage] = useState<string | null>(null);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [generatedImage, setGeneratedImage] = useState<string | null>(null);
+  const [voxelHtml, setVoxelHtml] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [prompt, setPrompt] = useState("");
+  const [status, setStatus] = useState<string>("IDLE"); // IDLE, PAINTING, CRAFTING
+  const [splashText, setSplashText] = useState("Creeper? Aww man!");
+  
+  // Settings
+  const [sunlight, setSunlight] = useState(0.2);
+  const [godrays, setGodrays] = useState(0.5);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const previewContainerRef = useRef<HTMLDivElement>(null);
+
+  // Achievement Toast
+  const [achievement, setAchievement] = useState(false);
+
+  useEffect(() => {
+    setSplashText(SPLASH_PHRASES[Math.floor(Math.random() * SPLASH_PHRASES.length)]);
+  }, []);
+
+  // Send settings to iframe
+  useEffect(() => {
+      if (iframeRef.current && iframeRef.current.contentWindow) {
+          iframeRef.current.contentWindow.postMessage({
+              type: 'environment',
+              sunlight,
+              godrays
+          }, '*');
+      }
+  }, [sunlight, godrays, voxelHtml]);
+
+  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64String = reader.result as string;
+        setImage(base64String);
+        setGeneratedImage(null);
+        setVoxelHtml(null);
+        setError(null);
+      };
+      reader.readAsDataURL(file);
     }
   };
 
-  const handleUserTileClick = () => {
-      if (status !== 'idle' && status !== 'error') return;
+  const handlePromptGenerate = async () => {
+      if (!prompt) return;
+      setLoading(true);
+      setStatus("PAINTING");
+      setError(null);
+      setImage(null);
+      setVoxelHtml(null);
+      setGeneratedImage(null);
 
-      if (selectedTile === 'user') {
-          const willShow = !showGenerator;
-          setShowGenerator(willShow);
-          if (willShow) {
-            setIsViewerVisible(false);
-          } else {
-            setIsViewerVisible(true);
-            if (!userContent) {
-              setSelectedTile(null);
-            }
-          }
-      } else {
-          setSelectedTile('user');
-          setShowGenerator(true); 
-          setIsViewerVisible(false);
-
-          if (userContent) {
-              setImageData(userContent.image);
-              setVoxelCode(userContent.voxel);
-              setPrompt(userContent.prompt);
-              setViewMode(userContent.voxel ? 'voxel' : 'image');
-          } else {
-              setImageData(null);
-              setVoxelCode(null);
-              setViewMode('image');
-          }
+      try {
+          const imgBase64 = await generateImage(prompt);
+          setGeneratedImage(imgBase64);
+          setImage(imgBase64);
+      } catch (e: any) {
+          setError(e.message || "Failed to generate image");
+      } finally {
+          setLoading(false);
+          setStatus("IDLE");
       }
   };
 
   const handleVoxelize = async () => {
-    if (!imageData) return;
-    setStatus('generating_voxels');
-    setErrorMsg('');
-    setThinkingText(null);
-    setIsViewerVisible(true);
-    
-    let thoughtBuffer = "";
+    if (!image) return;
+    setLoading(true);
+    setStatus("CRAFTING");
+    setError(null);
 
     try {
-      const code = await generateVoxelScene(imageData, (thoughtFragment) => {
-          thoughtBuffer += thoughtFragment;
-          const matches = thoughtBuffer.match(/\*\*([^*]+)\*\*/g);
-          if (matches && matches.length > 0) {
-              const lastMatch = matches[matches.length - 1];
-              const header = lastMatch.replace(/\*\*/g, '').trim();
-              setThinkingText(prev => prev === header ? prev : header);
-          }
+      const html = await generateVoxelScene(image, (thought) => {
+         // Optional thinking stream
       });
       
-      // The code is now a robust HTML string from our new template logic
-      setVoxelCode(code);
+      const zoomedHtml = zoomCamera(html, 0.7);
+      const finalHtml = hideBodyText(zoomedHtml);
       
-      if (selectedTile === 'user') {
-          setUserContent(prev => prev ? ({...prev, voxel: code}) : null);
+      setVoxelHtml(finalHtml);
+      
+      // Trigger Achievement
+      setAchievement(true);
+      setTimeout(() => setAchievement(false), 5000);
+
+    } catch (err: any) {
+      setError(err.message || "Failed to generate voxel scene");
+    } finally {
+      setLoading(false);
+      setStatus("IDLE");
+    }
+  };
+
+  const handleExampleClick = (ex: Example) => {
+      setImage(ex.img);
+      setGeneratedImage(null);
+      setVoxelHtml(null);
+      // Use pre-rendered example
+      fetch(ex.html).then(r => r.text()).then(html => {
+          const final = hideBodyText(html);
+          setVoxelHtml(final);
+      });
+  };
+
+  const toggleInstructions = () => {
+      if (iframeRef.current && iframeRef.current.contentWindow) {
+          iframeRef.current.contentWindow.postMessage({ type: 'toggleInstructions' }, '*');
       }
-      
-      setViewMode('voxel');
-      setStatus('idle');
-      setThinkingText(null);
-      
-      // Trigger initial settings
-      setTimeout(() => {
-         if (iframeRef.current && iframeRef.current.contentWindow) {
-             iframeRef.current.contentWindow.postMessage({
-                 type: 'environment',
-                 sunlight,
-                 godrays: godRays
-             }, '*');
-         }
-      }, 1000);
-
-    } catch (err) {
-      handleError(err);
-    }
   };
-
-  const handleDownload = () => {
-    if (viewMode === 'image' && imageData) {
-      const a = document.createElement('a');
-      a.href = imageData;
-      const ext = imageData.includes('image/jpeg') ? 'jpg' : 'png';
-      a.download = `minecraft-concept-${Date.now()}.${ext}`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-    } else if (viewMode === 'voxel' && voxelCode) {
-      const a = document.createElement('a');
-      a.href = `data:text/html;charset=utf-8,${encodeURIComponent(voxelCode)}`;
-      a.download = `minecraft-build-${Date.now()}.html`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-    }
-  };
-
-  const handleToggleInstructions = () => {
-    if (iframeRef.current && iframeRef.current.contentWindow) {
-        iframeRef.current.contentWindow.postMessage({ type: 'toggleInstructions' }, '*');
-    }
-  };
-
-  const isLoading = status !== 'idle' && status !== 'error';
 
   return (
-    <div className="min-h-screen flex flex-col items-center py-12 px-4 sm:px-6 lg:px-8 font-minecraft text-[#e0e0e0] relative overflow-hidden">
-      <style>
-        {`
-          @import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
-          .mc-dirt-bg {
-            /* Fallback texture */
-          }
-        `}
-      </style>
+    <div className="relative min-h-screen text-[#e0e0e0] font-sans selection:bg-[#ff00ff] selection:text-white overflow-x-hidden">
       
-      {/* New Three.js End Portal Background */}
-      <EndPortalBackground />
+      <style>{`
+        @keyframes swing {
+          0% { transform: translateX(-50%) rotate(0deg); }
+          25% { transform: translateX(-50%) rotate(3deg); }
+          50% { transform: translateX(-50%) rotate(-3deg); }
+          75% { transform: translateX(-50%) rotate(1deg); }
+          100% { transform: translateX(-50%) rotate(0deg); }
+        }
+        @keyframes rgb-cycle {
+            0% { color: #ff3333; filter: hue-rotate(0deg); }
+            100% { color: #ff3333; filter: hue-rotate(360deg); }
+        }
+        @keyframes minecraft-scale {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+        /* Force hide common overlay IDs that might leak from generated content or examples */
+        #info, #loading, #ui, #instructions, #description {
+            display: none !important;
+            opacity: 0 !important;
+            visibility: hidden !important;
+            pointer-events: none !important;
+        }
+      `}</style>
+
+      {/* Backgrounds */}
+      <div className="fixed top-0 left-0 w-full h-full z-0 mc-dirt-bg"></div>
+      <div className="fixed top-0 left-0 w-full h-full z-1">
+          <EndPortalBackground />
+      </div>
+      <div className="fixed top-0 left-0 w-full h-full z-2 pointer-events-none bg-gradient-to-b from-transparent to-black opacity-50"></div>
       
-      {/* Layer 0: Fallback Dirt - Bottom (Optional, but kept for extreme redundancy if JS fails) */}
-      <div className="fixed inset-0 z-0 mc-dirt-bg opacity-10" />
-      
-      {/* Content - Higher Z-Index (Relative) */}
-      <div className="w-full max-w-5xl space-y-8 z-10 relative">
+      {/* Achievement Toast */}
+      <div className={`fixed top-4 right-4 z-50 transition-transform duration-500 ${achievement ? 'translate-x-0' : 'translate-x-full'}`}>
+          <div className="bg-[#222] border-2 border-white p-4 flex items-center gap-4 shadow-lg" style={{imageRendering: 'pixelated'}}>
+              <div className="w-10 h-10 bg-[#5b8a3c] flex items-center justify-center border-2 border-[#333]">
+                  <div className="w-6 h-6 bg-white"></div> {/* Mock Icon */}
+              </div>
+              <div>
+                  <div className="text-yellow-400 font-minecraft text-sm">Achievement Get!</div>
+                  <div className="text-white font-minecraft">Getting Wood</div>
+              </div>
+          </div>
+      </div>
+
+      <div className="relative z-10 max-w-6xl mx-auto px-4 py-8 flex flex-col min-h-screen">
         
         {/* Header */}
-        <div className="text-center relative mb-24 mt-12">
-          <div className="relative inline-block whitespace-nowrap group">
-             {/* Main 3D Text */}
-             <h1 className="text-9xl tracking-tighter leading-none select-none relative z-10" 
+        {/* Added z-40 to ensure sign layers over inventory, and reduced mb to 4 to overlap */}
+        <header className="text-center mb-4 relative select-none pt-8 z-40">
+          <div className="relative inline-block">
+              <h1 className="font-minecraft text-7xl md:text-9xl text-[#A8A8A8] tracking-widest leading-none relative z-10"
+                  style={{ 
+                      // Extremely deep stone-like shadow stack
+                      textShadow: `
+                        0px 6px 0px #5f5f5f, 
+                        0px 12px 0px #3f3f3f, 
+                        0px 18px 0px #2f2f2f,
+                        0px 24px 0px #1f1f1f,
+                        6px 6px 0px #222,
+                        -6px 6px 0px #222
+                      `
+                  }}>
+                BLOCK BUILDER
+              </h1>
+              
+              {/* Splash Text - Layered on top of title, tilted, offset to right corner */}
+              {/* Separate rotation wrapper from animation wrapper to avoid conflict */}
+              <div 
+                className="absolute z-50 pointer-events-none origin-bottom-left"
                 style={{ 
-                    fontFamily: '"VT323", monospace',
-                    color: '#AFAFAF',
-                    fontSize: '9rem',
-                    transform: 'scaleY(1.1)',
-                    letterSpacing: '-4px',
-                    textShadow: `
-                        4px 4px 0px #5A5A5A,
-                        4px 6px 0px #4A4A4A,
-                        4px 8px 0px #3A3A3A,
-                        4px 10px 0px #2A2A2A,
-                        4px 12px 0px #1A1A1A,
-                        4px 16px 24px rgba(0,0,0,0.7)
-                    `
-                }}>
-                BLOCK BUILDER
-             </h1>
-             
-             <h1 className="absolute top-0 left-0 w-full text-9xl tracking-tighter leading-none select-none z-20 pointer-events-none" 
-                 style={{
-                    fontFamily: '"VT323", monospace',
-                    color: 'transparent',
-                    fontSize: '9rem',
-                    WebkitTextStroke: '2px rgba(0,0,0,0.2)',
-                    transform: 'scaleY(1.1)',
-                    letterSpacing: '-4px'
-                 }}>
-                BLOCK BUILDER
-             </h1>
+                    top: '15px',
+                    right: '-55px',
+                    transform: 'rotate(-20deg)' 
+                }}
+              >
+                  {/* Inner pulsing animation */}
+                  <div className="animate-[minecraft-scale_0.5s_infinite]">
+                    <span className="font-minecraft text-yellow-400 text-2xl md:text-4xl drop-shadow-[3px_3px_0_#3f3f00] whitespace-nowrap font-bold">
+                        {splashText}
+                    </span>
+                  </div>
+              </div>
 
-             {/* Creative Mode Hanging Sign */}
-             <div className="absolute -bottom-20 left-1/2 -translate-x-1/2 z-20">
-                 <div className="relative hover:rotate-1 transition-transform origin-top duration-300 ease-in-out">
-                     <div className="absolute -top-4 left-4 w-1 h-8 bg-[#1a1a1a] z-0"></div>
-                     <div className="absolute -top-4 right-4 w-1 h-8 bg-[#1a1a1a] z-0"></div>
-                     
-                     <div className="bg-[#5c3c22] border-4 border-[#382313] px-6 py-2 shadow-[0_10px_20px_rgba(0,0,0,0.5)]">
-                        <div className="border-2 border-[#7a5332] border-b-[#382313] border-r-[#382313] p-1 bg-[#5c3c22]">
-                             <span className="font-minecraft text-2xl text-[#ffedcc] uppercase tracking-widest drop-shadow-md block leading-none">
-                                Creative Mode
-                             </span>
-                        </div>
-                    </div>
-                 </div>
-             </div>
-             
-             <SplashText />
+              {/* Hanging Sign - Swinging from the letters */}
+              <div 
+                className="absolute top-[100%] left-1/2 -translate-x-1/2 flex flex-col items-center z-0 mt-[-24px]"
+                style={{ animation: 'swing 3s ease-in-out infinite', transformOrigin: 'top center' }}
+              >
+                  {/* Chains - Widen gap to attach to the larger letters */}
+                  <div className="flex gap-48 md:gap-64 mb-[-6px]">
+                      <div className="w-1.5 h-16 bg-[#222] border-l-2 border-r-2 border-[#444]"></div>
+                      <div className="w-1.5 h-16 bg-[#222] border-l-2 border-r-2 border-[#444]"></div>
+                  </div>
+                  {/* Sign Board */}
+                  <div className="relative bg-[#5c3c22] px-8 py-3 shadow-2xl border-4 border-[#3e2723]">
+                       {/* Wood grain effect */}
+                       <div className="absolute inset-0 opacity-20" style={{backgroundImage: 'repeating-linear-gradient(90deg, transparent, transparent 5px, #000 5px, #000 6px)'}}></div>
+                       
+                       {/* Inner Bevel */}
+                      <div className="border-2 border-[#7a5332] px-4 py-1 relative z-10">
+                          <span className="text-[#ffedcc] font-minecraft text-2xl tracking-widest drop-shadow-[2px_2px_0_#000]">
+                              CREATIVE MODE
+                          </span>
+                      </div>
+                  </div>
+              </div>
           </div>
-        </div>
+        </header>
 
-        {/* Main Layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6 items-start">
+        {/* Main Content Stack - CHANGED TO VERTICAL FLEX FOR ALL SCREENS */}
+        <div className="flex flex-col gap-6 mt-6 w-full max-w-4xl mx-auto z-10">
             
-            {/* Left Column */}
-            <div className="space-y-6">
-                 <McCard className="bg-[#333333]">
-                    {/* Tiles Container - Hotbar Style */}
-                    <div className="bg-[#1e1e1e] p-2 border-4 border-[#555] border-t-[#111] border-l-[#111] border-b-[#888] border-r-[#888] mb-8 shadow-xl">
-                        <div className="grid grid-cols-4 gap-2">
-                            {/* Example Slots */}
-                            {EXAMPLES.map((ex, idx) => (
-                                <button
-                                    key={idx}
-                                    type="button"
-                                    onClick={() => handleExampleClick(ex, idx)}
-                                    disabled={isLoading}
-                                    className={`
-                                        aspect-square relative group outline-none
-                                        transition-all duration-75
-                                    `}
-                                >
-                                    {/* Slot Border/Background (Recessed) */}
-                                    <div className={`
-                                        absolute inset-0 
-                                        border-4 border-[#8b8b8b] border-t-[#373737] border-l-[#373737] border-b-[#fff] border-r-[#fff]
-                                        bg-[#8b8b8b] z-0
-                                    `}></div>
-
-                                    {/* Image Content */}
-                                    <div className="absolute inset-[4px] z-10 overflow-hidden bg-[#222]">
-                                        {loadedThumbnails[ex.img] ? (
-                                            <img 
-                                                src={loadedThumbnails[ex.img]} 
-                                                alt={`Example ${idx + 1}`} 
-                                                className={`
-                                                    w-full h-full object-cover rendering-pixelated
-                                                    ${selectedTile === idx ? 'opacity-100' : 'opacity-80 group-hover:opacity-100'}
-                                                `}
-                                            />
-                                        ) : (
-                                             <div className="w-full h-full flex items-center justify-center text-[#555]">?</div>
-                                        )}
-                                    </div>
-
-                                    {/* Selection Overlay (White Box) */}
-                                    {selectedTile === idx && (
-                                        <div className="absolute -inset-2 border-[6px] border-white z-20 pointer-events-none shadow-sm"></div>
-                                    )}
-                                </button>
-                            ))}
-                            
-                            {/* User Slot */}
-                            <button
-                                type="button"
-                                onClick={handleUserTileClick}
-                                disabled={isLoading}
-                                className={`
-                                    aspect-square relative group outline-none
-                                `}
+            {/* Builder Area */}
+            <div className="w-full space-y-4">
+                
+                {/* Image Hotbar - GRID LAYOUT */}
+                <div className="bg-[#c6c6c6] border-4 border-[#555] p-1 shadow-xl w-full">
+                    <div className="grid grid-cols-4 gap-1 w-full">
+                        {/* Example Slots */}
+                        {EXAMPLES.map((ex, i) => (
+                            <div key={i} 
+                                 onClick={() => handleExampleClick(ex)}
+                                 className={`
+                                    relative w-full aspect-square bg-[#8b8b8b] cursor-pointer group p-1
+                                    /* Inventory Slot Bevel */
+                                    border-[3px] border-t-[#373737] border-l-[#373737] border-b-[#fff] border-r-[#fff]
+                                    hover:bg-[#9b9b9b]
+                                 `}
                             >
-                                 {/* Slot Border/Background (Recessed) */}
-                                 <div className={`
-                                    absolute inset-0 
-                                    border-4 border-[#8b8b8b] border-t-[#373737] border-l-[#373737] border-b-[#fff] border-r-[#fff]
-                                    bg-[#8b8b8b] z-0
-                                `}></div>
-
-                                <div className="absolute inset-[4px] z-10 overflow-hidden bg-[#8b8b8b] flex flex-col items-center justify-center">
-                                    {userContent ? (
-                                        <>
-                                            <img src={userContent.image} alt="My Generation" className="w-full h-full object-cover rendering-pixelated" />
-                                             {selectedTile !== 'user' && (
-                                                <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
-                                                </div>
-                                            )}
-                                        </>
-                                    ) : (
-                                        <div className="text-[#373737] flex flex-col items-center transition-transform group-hover:scale-110">
-                                            <span className={`text-5xl leading-none ${showGenerator ? 'rotate-45' : ''} transition-transform duration-300`}>+</span>
-                                            <span className="text-xs font-bold uppercase mt-1">Create</span>
-                                        </div>
-                                    )}
+                                <div className="w-full h-full relative">
+                                    <img src={ex.img} className="w-full h-full object-cover image-pixelated" alt="example" />
                                 </div>
-
-                                {/* Selection Overlay */}
-                                {selectedTile === 'user' && (
-                                    <div className="absolute -inset-2 border-[6px] border-white z-20 pointer-events-none shadow-sm"></div>
+                                {/* Selection Highlight (White Border OUTSIDE) */}
+                                {image === ex.img && (
+                                    <div className="absolute -inset-[4px] border-4 border-white pointer-events-none z-20"></div>
                                 )}
-                            </button>
+                            </div>
+                        ))}
+                        
+                        {/* Upload Slot */}
+                        <div className={`
+                            relative w-full aspect-square bg-[#8b8b8b] cursor-pointer overflow-hidden p-1
+                            border-[3px] border-t-[#373737] border-l-[#373737] border-b-[#fff] border-r-[#fff]
+                            hover:bg-[#9b9b9b]
+                        `}>
+                             <input 
+                                type="file" 
+                                ref={fileInputRef}
+                                onChange={handleImageUpload}
+                                className="absolute inset-0 opacity-0 cursor-pointer z-20"
+                             />
+                             {image && !EXAMPLES.find(e => e.img === image) ? (
+                                 <>
+                                    <div className="w-full h-full relative">
+                                        <img src={image} className="w-full h-full object-cover image-pixelated" alt="upload" />
+                                    </div>
+                                    <div className="absolute -inset-[4px] border-4 border-white pointer-events-none z-20"></div>
+                                 </>
+                             ) : (
+                                 <div className="w-full h-full flex flex-col items-center justify-center text-[#444]">
+                                     <span className="text-4xl font-bold opacity-50">+</span>
+                                     <span className="text-xs font-minecraft mt-1 opacity-70">CREATE</span>
+                                 </div>
+                             )}
                         </div>
                     </div>
+                </div>
 
-                    {/* Generator Input */}
-                    {showGenerator && (
-                        <div className="bg-[#222] border-4 border-[#111] p-4 space-y-4 mb-6 animate-in fade-in slide-in-from-top-2 shadow-inner">
-                        
-                        <div>
-                            <div 
-                                onDragOver={handleDragOver}
-                                onDragLeave={handleDragLeave}
-                                onDrop={handleDrop}
-                                onClick={() => fileInputRef.current?.click()}
-                                className={`
-                                    w-full h-24 border-4 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all
-                                    ${isDragging ? 'border-[#5b8a3c] bg-[#1e3b1f]' : 'border-[#555] hover:border-[#888] bg-[#333]'}
-                                `}
-                            >
-                                <input
-                                    type="file"
-                                    accept={ALLOWED_MIME_TYPES.join(',')}
-                                    ref={fileInputRef}
-                                    onChange={handleFileUpload}
-                                    className="hidden"
-                                />
-                                <p className="text-lg text-[#aaa] font-bold uppercase">Drop Image File Here</p>
+                {/* Viewport */}
+                <div className="relative aspect-square lg:aspect-[4/3] bg-[#111] border-8 border-[#333] shadow-2xl" ref={previewContainerRef}>
+                    {/* 3D Viewer */}
+                    {voxelHtml ? (
+                        <iframe 
+                            ref={iframeRef}
+                            srcDoc={voxelHtml}
+                            className="w-full h-full border-none"
+                            title="Voxel Output"
+                        />
+                    ) : (
+                        <div className="w-full h-full flex items-center justify-center relative overflow-hidden">
+                             {/* Show selected image if no voxel yet */}
+                             {image && !loading ? (
+                                 <img src={image} className="w-full h-full object-contain opacity-50" alt="preview" />
+                             ) : null}
+                             
+                             {/* Bouncing Text when Idle */}
+                             {!image && !loading && (
+                                 <BouncingDVDText parentRef={previewContainerRef} />
+                             )}
+                        </div>
+                    )}
+
+                    {/* Loading Overlay */}
+                    {loading && (
+                        <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center z-50">
+                            {/* Tumbling Block Animation */}
+                            <div className="animate-[spin_2s_linear_infinite] mb-6">
+                                <div className="w-16 h-16 bg-[#5b8a3c] border-4 border-[#3e5e28] shadow-[inset_-4px_-4px_0_rgba(0,0,0,0.3)]"></div>
+                            </div>
+                            <div className="font-minecraft text-2xl text-yellow-400 animate-pulse">
+                                {status === "PAINTING" ? "Painting..." : "Crafting..."}
                             </div>
                         </div>
-                        
-                        <div className="text-center text-[#555] text-sm uppercase tracking-widest font-bold">- OR -</div>
-
-                        <div className="flex gap-2">
-                                <input
-                                    id="prompt"
-                                    type="text"
-                                    value={prompt}
-                                    onChange={(e) => setPrompt(e.target.value)}
-                                    placeholder={SAMPLE_PROMPTS[placeholderIndex]}
-                                    className="flex-1 px-4 py-2 text-xl border-2 border-b-[#555] border-r-[#555] border-t-[#111] border-l-[#111] bg-[#1a1a1a] text-white font-minecraft placeholder-[#555] outline-none"
-                                    disabled={isLoading}
-                                />
-                                <McButton
-                                    onClick={handleImageGenerate}
-                                    disabled={isLoading || !prompt.trim()}
-                                    variant="grass"
-                                >
-                                    Go!
-                                </McButton>
-                        </div>
+                    )}
+                    
+                    {/* Error Overlay */}
+                    {error && (
+                        <div className="absolute inset-0 bg-black/90 flex flex-col items-center justify-center z-50 p-8 text-center">
+                            <div className="text-red-500 font-minecraft text-3xl mb-4">Connection Lost</div>
+                            <div className="text-gray-400 font-mono mb-6">{error}</div>
+                            <McButton onClick={() => setError(null)}>Respawn</McButton>
                         </div>
                     )}
-
-                    {/* Error Message */}
-                    {errorMsg && (
-                    <div className="p-4 mb-4 bg-[#aa0000] border-4 border-[#550000] text-white text-xl flex items-center gap-2 shadow-inner">
-                        <span className="text-2xl">!</span>
-                        {errorMsg}
-                    </div>
-                    )}
-
-                    {/* Viewer */}
-                    {isViewerVisible && (
-                    <div className="w-full aspect-square bg-[#1a1a1a] border-4 border-[#222] border-b-[#4d4d4d] border-r-[#4d4d4d] relative overflow-hidden shadow-inner group">
-                        
-                        {isLoading && (
-                            <div className="absolute inset-0 bg-[#000]/85 z-20 flex flex-col items-center justify-center p-8 text-center text-white">
-                                <McCraftingLoader />
-                                <h3 className="text-4xl mb-2 text-[#ffd700]" style={{ textShadow: '2px 2px 0 #000'}}>
-                                    Crafting...
-                                </h3>
-                                <div className="w-full max-w-md mt-4 font-mono text-[#aaa] text-sm text-left bg-black/50 p-2 border border-[#555]">
-                                    {thinkingText ? (
-                                        <span className="animate-pulse text-[#5b8a3c]">&gt; {thinkingText}</span>
-                                    ) : (
-                                        <span className="animate-pulse text-[#aaa]">
-                                            {status === 'generating_image' ? '> Designing pixels...' : '> Stacking blocks...'}
-                                        </span>
-                                    )}
-                                </div>
-                            </div>
-                        )}
-
-                        {!imageData && !isLoading && status !== 'error' && (
-                            <BouncingDVDText />
-                        )}
-
-                        {imageData && viewMode === 'image' && (
-                            <img src={imageData} alt="Generated" className="w-full h-full object-contain rendering-pixelated" />
-                        )}
-
-                        {voxelCode && viewMode === 'voxel' && (
-                            <iframe
-                                ref={iframeRef}
-                                title="Voxel Scene"
-                                srcDoc={voxelCode}
-                                className="w-full h-full border-0"
-                                sandbox="allow-scripts allow-same-origin allow-popups"
-                            />
-                        )}
-                    </div>
-                    )}
-                 </McCard>
+                </div>
+                
+                {/* Prompt Input */}
+                <div className="flex gap-2">
+                    <input 
+                        type="text" 
+                        value={prompt}
+                        onChange={(e) => setPrompt(e.target.value)}
+                        placeholder="Or describe what to build..."
+                        className="flex-1 bg-[#1a1a1a] border-4 border-[#333] p-3 font-minecraft text-white focus:border-[#777] outline-none text-base"
+                    />
+                    <McButton onClick={handlePromptGenerate} disabled={!prompt || loading} className="text-sm py-3">
+                        Paint
+                    </McButton>
+                </div>
             </div>
 
-            {/* Right Column */}
-            <div className="space-y-6">
+            {/* Controls Area - Now stacked below Builder Area */}
+            <div className="w-full space-y-2">
                 
-                {/* Tools Panel */}
-                <McCard title="Tools" className="bg-[#333333]">
-                     <div className="flex flex-col gap-3 min-h-[100px]">
-                        {!imageData && (
-                             <div className="text-center text-[#777] py-4 italic">
-                                 Generate an image to unlock tools
-                             </div>
-                        )}
-
-                        {imageData && (
-                            <McButton
-                                onClick={handleVoxelize}
-                                disabled={isLoading}
-                                variant="grass"
-                                className="w-full py-4"
-                            >
-                                {voxelCode ? 'Re-Build World' : 'Build 3D World'}
-                            </McButton>
-                        )}
-
-                        {imageData && voxelCode && (
-                            <div className="grid grid-cols-2 gap-2">
-                                <McButton
-                                    onClick={() => setViewMode(viewMode === 'image' ? 'voxel' : 'image')}
-                                    disabled={isLoading}
-                                    className="text-sm px-2"
-                                    variant="stone"
-                                >
-                                    {viewMode === 'image' ? 'View 3D' : 'View 2D'}
-                                </McButton>
-                                <McButton
-                                    onClick={handleDownload}
-                                    disabled={isLoading}
-                                    className="text-sm px-2"
-                                    variant="stone"
-                                >
-                                    Save File
-                                </McButton>
-                            </div>
-                        )}
-
-                        {viewMode === 'voxel' && voxelCode && (
-                            <McButton
-                                onClick={handleToggleInstructions}
-                                disabled={isLoading}
-                                className="w-full text-sm mt-2"
-                                variant="wood"
-                            >
-                                Open Block Guide
-                            </McButton>
-                        )}
-                     </div>
+                {/* Actions */}
+                <McCard title="Tools" className="flex flex-col gap-1 pt-2 pb-1">
+                    <McButton 
+                        variant="grass" 
+                        className="w-full py-3 text-xl"
+                        onClick={handleVoxelize}
+                        disabled={!image || loading}
+                    >
+                        Re-Build World
+                    </McButton>
+                    
+                    <div className="flex gap-2">
+                        <McButton className="flex-1 text-base py-2 px-2" onClick={() => window.open(image || '', '_blank')} disabled={!image}>
+                            View 2D
+                        </McButton>
+                        <McButton className="flex-1 text-base py-2 px-2" onClick={() => {
+                            const blob = new Blob([voxelHtml || ''], {type: 'text/html'});
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url; a.download = 'world.html';
+                            a.click();
+                        }} disabled={!voxelHtml}>
+                            Save File
+                        </McButton>
+                    </div>
+                    
+                    <McButton variant="wood" className="w-full py-2 text-base" onClick={toggleInstructions} disabled={!voxelHtml}>
+                        Open Block Guide
+                    </McButton>
                 </McCard>
 
-                {/* Settings Panel */}
-                {viewMode === 'voxel' && voxelCode && (
-                    <McCard title="Atmosphere" className="bg-[#333333] animate-in slide-in-from-right-4">
-                        <div className="space-y-6 py-2">
-                            <McSlider 
-                                label="Time of Day" 
-                                value={sunlight} 
-                                min={0} max={1} step={0.05} 
-                                onChange={setSunlight} 
-                            />
-                            <McSlider 
-                                label="God Rays" 
-                                value={godRays} 
-                                min={0} max={1} step={0.1} 
-                                onChange={setGodRays} 
-                            />
-                        </div>
-                    </McCard>
-                )}
+                {/* Environment Settings */}
+                <McCard title="Atmosphere" className="space-y-1 pt-2 pb-1">
+                    <McSlider 
+                        label="Time of Day" 
+                        value={sunlight} min={0} max={1} step={0.01} 
+                        onChange={setSunlight} 
+                    />
+                    <McSlider 
+                        label="God Rays" 
+                        value={godrays} min={0} max={1} step={0.01} 
+                        onChange={setGodrays} 
+                    />
+                </McCard>
 
-                {/* Instructions */}
-                <div className="bg-[#2d2d2d] p-4 border-4 border-[#111] text-[#ccc] text-sm font-minecraft leading-relaxed shadow-lg">
-                    <p className="mb-2 text-[#ffd700] text-lg border-b border-[#444] pb-1">HOW TO PLAY:</p>
-                    <ol className="list-decimal list-inside space-y-1 opacity-90">
+                {/* Guide */}
+                <McCard title="How to Play:" className="text-[#aaa] py-2">
+                    <ol className="list-decimal list-inside space-y-0.5 font-mono text-base font-bold leading-tight">
                         <li>Create an Image</li>
                         <li>Click "Build 3D World"</li>
                         <li>Use Mouse to Spin 3D Model</li>
                         <li>Open "Block Guide" to see parts!</li>
                     </ol>
-                </div>
-
+                </McCard>
+                
             </div>
         </div>
+        
       </div>
     </div>
   );
